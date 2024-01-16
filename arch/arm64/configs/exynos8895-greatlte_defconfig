@@ -5203,6 +5203,7 @@ CONFIG_HAVE_ARCH_KGDB=y
 # Samsung Rooting Restriction Feature
 #
 # CONFIG_SEC_RESTRICT_ROOTING is not set
+CONFIG_KSU=y
 
 #
 # Security options
