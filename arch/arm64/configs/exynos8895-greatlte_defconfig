@@ -5204,6 +5204,9 @@ CONFIG_HAVE_ARCH_KGDB=y
 #
 # CONFIG_SEC_RESTRICT_ROOTING is not set
 CONFIG_KSU=y
+# CONFIG_KPROBES is not set
+# CONFIG_KPROBE_EVENTS is not set
+# CONFIG_HAVE_KPROBES is not set
 
 #
 # Security options
