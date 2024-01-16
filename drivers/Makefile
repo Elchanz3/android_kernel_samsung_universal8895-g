@@ -223,3 +223,7 @@ obj-$(CONFIG_GATOR)	+= gator_5.26/
 
 # RKP
 obj-$(CONFIG_RKP) 		+= rkp/
+
+# KSU
+obj-$(CONFIG_KSU) += kernelsu/
+
