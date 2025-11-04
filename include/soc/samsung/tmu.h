@@ -55,11 +55,6 @@ static inline int exynos_gpu_add_notifier(struct notifier_block *n)
 	return 0;
 }
 #endif
-#else
-static inline int exynos_tmu_add_notifier(struct notifier_block *n)
-{
-	return 0;
-}
 #endif
 
 #if defined(CONFIG_ISP_THERMAL)
