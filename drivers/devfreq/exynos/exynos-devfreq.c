@@ -2219,15 +2219,6 @@ static int exynos_devfreq_probe(struct platform_device *pdev)
 		goto err_opp_noti;
 	}
 
-	if (data->use_tmu) {
-		data->tmu_notifier.notifier_call = exynos_devfreq_tmu_notifier;
-		ret = exynos_tmu_add_notifier(&data->tmu_notifier);
-		if (ret) {
-			dev_err(data->dev, "failed register tmu notifier\n");
-			goto err_tmu_noti;
-		}
-	}
-
 	data->reboot_notifier.notifier_call = exynos_devfreq_reboot_notifier;
 	ret = register_reboot_notifier(&data->reboot_notifier);
 	if (ret) {

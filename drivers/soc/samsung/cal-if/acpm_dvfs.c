@@ -214,10 +214,6 @@ static void acpm_dvfs_get_cpu_cold_temp_list(struct device *dev)
 
 	acpm_dvfs.cpu_len = proplen;
 
-	acpm_dvfs.cpu_tmu_notifier.notifier_call = acpm_cpu_tmu_notifier;
-	if (exynos_tmu_add_notifier(&acpm_dvfs.cpu_tmu_notifier))
-		dev_err(dev, "failed register cpu tmu notifier\n");
-
 }
 
 static void acpm_dvfs_get_gpu_cold_temp_list(struct device *dev)
