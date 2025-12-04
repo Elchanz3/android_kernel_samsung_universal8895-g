@@ -25,7 +25,19 @@
 #include <linux/slab.h>
 #include <linux/pm_qos.h>
 #include <linux/gaming_control.h>
+#include <soc/samsung/cal-if.h>
+#include <soc/samsung/exynos-cpu_hotplug.h>
+#include <dt-bindings/clock/exynos9810.h>
+#include "../soc/samsung/cal-if/exynos9810/cmucal-vclk.h"
+#include "../soc/samsung/cal-if/exynos9810/cmucal-node.h"
 
+#define DEFAULT_CPU_LIMIT 1794000
+
+extern unsigned long arg_cpu_max_c1;
+extern unsigned long arg_cpu_min_c1;
+extern unsigned long arg_cpu_max_c2;
+extern unsigned long arg_cpu_min_c2;
+extern int exynos_cpufreq_update_volt_table(void);
 extern void exynos_cpufreq_set_gaming_mode(void);
 
 /* PM QoS implementation */
@@ -41,11 +53,13 @@ static unsigned int min_little_freq = 1456000;
 static unsigned int max_little_freq = 2002000;
 static unsigned int min_big_freq = 1469000;
 static unsigned int max_big_freq = 2886000;
-static unsigned int min_gpu_freq = 598000;
-static unsigned int max_gpu_freq = 598000;
+static unsigned int custom_little_freq, custom_little_voltage, custom_big_freq, custom_big_voltage = 0;
+static unsigned int back_little_freq, back_little_voltage, back_big_freq, back_big_voltage = 0;
 static int nr_running_games = 0;
 static bool always_on = 0;
 static bool battery_idle = 0;
+static bool gaming_mode_initialized = 0;
+
 bool gaming_mode;
 
 char games_list[GAME_LIST_LENGTH] = {0};
@@ -55,6 +69,8 @@ pid_t games_pid[NUM_SUPPORTED_RUNNING_GAMES] = {
 
 static inline void set_gaming_mode(bool mode, bool force)
 {
+	unsigned int little_max, little_min, big_max, big_min;
+
 	if (always_on)
 		mode = 1;
 
@@ -62,18 +78,125 @@ static inline void set_gaming_mode(bool mode, bool force)
 		return;
 	else
 		gaming_mode = mode;
-	
+
+	if (!mode)
+		gaming_mode_initialized = 0;
+
+	little_max = max_little_freq;
+	little_min = min_little_freq;
+	big_max = max_big_freq;
+	big_min = min_big_freq;
+
+	if (custom_little_freq) {
+		if (custom_little_freq <= arg_cpu_min_c1)
+			little_max = little_min = arg_cpu_min_c1;
+		else if (custom_little_freq >= arg_cpu_max_c1)
+			little_max = little_min = arg_cpu_max_c1;
+	}
+
+	if (!back_little_freq)
+			back_little_freq = little_max;
+
+	if (custom_little_voltage && mode && !back_little_voltage) {
+		back_little_voltage = fvmap_read(DVFS_CPUCL0, READ_VOLT, back_little_freq);
+		fvmap_patch(DVFS_CPUCL0, back_little_freq, custom_little_voltage);
+	} else if (!mode && back_little_voltage) {
+		fvmap_patch(DVFS_CPUCL0, back_little_freq, back_little_voltage);
+		back_little_freq = back_little_voltage = 0;
+	}
+
+	if (custom_big_freq) {
+		if (custom_big_freq <= arg_cpu_min_c2) {
+			big_max = big_min = arg_cpu_min_c2;
+		} else if (custom_big_freq >= arg_cpu_max_c2) {
+			if (mode || DEFAULT_CPU_LIMIT > arg_cpu_max_c2)
+				big_max = big_min = arg_cpu_max_c2;
+			else
+				big_max = big_min = DEFAULT_CPU_LIMIT;
+		}
+	}
+
+	if (!back_big_freq)
+			back_big_freq = big_max;
+
+	if (custom_big_voltage && mode && !back_big_voltage) {
+		back_big_voltage = fvmap_read(DVFS_CPUCL1, READ_VOLT, back_big_freq);
+		fvmap_patch(DVFS_CPUCL1, back_big_freq, custom_big_voltage);
+	} else if (!mode && back_big_voltage) {
+		fvmap_patch(DVFS_CPUCL1, back_big_freq, back_big_voltage);
+		back_big_freq = back_big_voltage = 0;
+	}
+
+	exynos_cpufreq_update_volt_table();
 	exynos_cpufreq_set_gaming_mode();
 
 	pm_qos_update_request(&gaming_control_min_int_qos, mode && min_int_freq ? min_int_freq : PM_QOS_DEVICE_THROUGHPUT_DEFAULT_VALUE);
 	pm_qos_update_request(&gaming_control_min_mif_qos, mode && min_mif_freq ? min_mif_freq : PM_QOS_BUS_THROUGHPUT_DEFAULT_VALUE);
-	pm_qos_update_request(&gaming_control_min_little_qos, mode && min_little_freq ? min_little_freq : PM_QOS_CLUSTER0_FREQ_MIN_DEFAULT_VALUE);
-	pm_qos_update_request(&gaming_control_max_little_qos, mode && max_little_freq ? max_little_freq : PM_QOS_CLUSTER0_FREQ_MAX_DEFAULT_VALUE);
-	pm_qos_update_request(&gaming_control_min_big_qos, mode && min_big_freq ? min_big_freq : PM_QOS_CLUSTER1_FREQ_MIN_DEFAULT_VALUE);
-	pm_qos_update_request(&gaming_control_max_big_qos, mode && max_big_freq ? max_big_freq : PM_QOS_CLUSTER1_FREQ_MAX_DEFAULT_VALUE);
-	
-	gpu_custom_max_clock(mode ? max_gpu_freq : 0);
-	gpu_custom_min_clock(mode ? min_gpu_freq : 0);
+	pm_qos_update_request(&gaming_control_min_little_qos, mode && little_min ? little_min : PM_QOS_CLUSTER0_FREQ_MIN_DEFAULT_VALUE);
+	pm_qos_update_request(&gaming_control_max_little_qos, mode && little_max ? little_max : PM_QOS_CLUSTER0_FREQ_MAX_DEFAULT_VALUE);
+	pm_qos_update_request(&gaming_control_min_big_qos, mode && big_min ? big_min : PM_QOS_CLUSTER1_FREQ_MIN_DEFAULT_VALUE);
+	pm_qos_update_request(&gaming_control_max_big_qos, mode && big_max ? big_max : PM_QOS_CLUSTER1_FREQ_MAX_DEFAULT_VALUE);
+
+	if (mode)
+		gaming_mode_initialized = 1;
+
+	if (custom_little_freq) {
+		__cal_dfs_set_rate(ACPM_DVFS_CPUCL0, mode ? custom_little_freq : little_max);
+		__cal_dfs_set_rate(VCLK_CLUSTER0, (mode ? custom_little_freq : little_max) * 1000);
+		__cal_dfs_set_rate(PLL_CPUCL0, (mode ? custom_little_freq : little_max) * 1000);
+	}
+
+	if (custom_big_freq) {
+		__cal_dfs_set_rate(ACPM_DVFS_CPUCL1, mode ? custom_big_freq : big_max);
+		__cal_dfs_set_rate(VCLK_CLUSTER1, (mode ? custom_big_freq : big_max) * 1000);
+		__cal_dfs_set_rate(PLL_CPUCL1, (mode ? custom_big_freq : big_max) * 1000);
+	}
+}
+
+unsigned long cal_dfs_check_gaming_mode(unsigned int id) {
+	unsigned long ret = 0;
+
+	if (!gaming_mode_initialized)
+		return ret;
+
+	switch (id) {
+	/* LITTLE */
+	case ACPM_DVFS_CPUCL0:
+		ret = custom_little_freq;
+		break;
+	/* BIG */
+	case ACPM_DVFS_CPUCL1:
+		ret = custom_big_freq;
+		break;
+	default:
+		break;
+	}
+
+	return ret;
+}
+
+int fake_freq_gaming(int id) {
+	int ret = 0;
+
+	if (!gaming_mode)
+		return ret;
+
+	switch (id) {
+	/* LITTLE */
+	case ACPM_DVFS_CPUCL0:
+	case DVFS_CPUCL0:
+		ret = back_little_freq;
+		break;
+	/* BIG */
+	case ACPM_DVFS_CPUCL1:
+	case DVFS_CPUCL1:
+		ret = back_big_freq;
+		break;
+	default:
+		break;
+	}
+
+	return ret;
 }
 
 bool battery_idle_gaming(void) {
@@ -264,8 +387,10 @@ attr_value(min_little_freq);
 attr_value(max_little_freq);
 attr_value(min_big_freq);
 attr_value(max_big_freq);
-attr_value(min_gpu_freq);
-attr_value(max_gpu_freq);
+attr_value(custom_little_freq);
+attr_value(custom_little_voltage);
+attr_value(custom_big_freq);
+attr_value(custom_big_voltage);
 
 static ssize_t status_show(struct kobject *kobj,
 		struct kobj_attribute *attr, char *buf)
@@ -312,8 +437,10 @@ static struct attribute *gaming_control_attributes[] = {
 	&max_little_freq_attribute.attr,
 	&min_big_freq_attribute.attr,
 	&max_big_freq_attribute.attr,
-	&min_gpu_freq_attribute.attr,
-	&max_gpu_freq_attribute.attr,
+	&custom_little_freq_attribute.attr,
+	&custom_little_voltage_attribute.attr,
+	&custom_big_freq_attribute.attr,
+	&custom_big_voltage_attribute.attr,
 	NULL
 };
 
