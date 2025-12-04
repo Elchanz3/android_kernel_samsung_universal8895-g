@@ -17,6 +17,8 @@
 #include <linux/sti/abc_common.h>
 #endif
 
+#include <linux/gaming_control.h>
+
 bool sleep_mode = false;
 
 static struct device_attribute sec_battery_attrs[] = {
@@ -1227,6 +1229,10 @@ static void sec_bat_set_charging_status(struct sec_battery_info *battery,
 		     (battery->capacity == 100 && !battery->slate_mode)) &&
 		    !battery->store_mode) {
 			value.intval = 100;
+			
+		if(battery_idle_gaming() && battery->capacity >= 20)
+		goto warn;
+			
 			psy_do_property(battery->pdata->fuelgauge_name, set,
 					POWER_SUPPLY_PROP_CHARGE_FULL, value);
 			/* To get SOC value (NOT raw SOC), need to reset value */
@@ -1238,6 +1244,9 @@ static void sec_bat_set_charging_status(struct sec_battery_info *battery,
 		battery->expired_time = battery->pdata->expired_time;
 		battery->prev_safety_time = 0;
 		break;
+		
+		warn:
+		pr_info("%s : stop charging(%d, %d)\n", __func__, battery->capacity, battery->batt_full_capacity);
 	case POWER_SUPPLY_STATUS_FULL:
 		if (is_wireless_type(battery->cable_type)) {
 			bool send_cs100_cmd = true;

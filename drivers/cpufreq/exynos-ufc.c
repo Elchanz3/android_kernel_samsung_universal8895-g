@@ -24,6 +24,8 @@
 
 #include <linux/sysfs_helpers.h>
 
+#include <linux/gaming_control.h>
+
 #include <soc/samsung/cal-if.h>
 
 /*********************************************************************
@@ -37,6 +39,14 @@
 
 static int last_max_limit = -1;
 static int sse_mode;
+
+bool exynos_cpufreq_get_unlock_freqs_status()
+{
+	if (gaming_mode)
+		return true;
+
+	return unlock_freqs_switch;
+}
 
 static ssize_t show_cpufreq_table(struct kobject *kobj,
 				struct attribute *attr, char *buf)
@@ -616,6 +626,11 @@ static void cpufreq_max_limit_update(int input_freq)
 
 		set_max = true;
 	}
+}
+
+void exynos_cpufreq_set_gaming_mode(void) {
+	last_max_limit = -1;
+	cpufreq_max_limit_update(last_max_limit);
 }
 
 static ssize_t store_cpufreq_max_limit(struct kobject *kobj, struct attribute *attr,
