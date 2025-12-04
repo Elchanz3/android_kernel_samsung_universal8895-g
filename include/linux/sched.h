@@ -1551,6 +1551,9 @@ struct task_struct {
 	atomic_t usage;
 	unsigned int flags;	/* per process flags, defined below */
 	unsigned int ptrace;
+	
+	/* Android app state */
+	int app_state;
 
 #ifdef CONFIG_SMP
 	struct llist_node wake_entry;
